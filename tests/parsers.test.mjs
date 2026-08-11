@@ -4,6 +4,7 @@ import {
   parseMarkdownTable,
   parseApplications,
   parsePipeline,
+  parsePipelineItems,
   addPipelineUrl,
   removePipelineUrl,
   setPipelineState,
@@ -212,6 +213,13 @@ const CLI_MD = [
 
 test('parsePipeline: reads the CLI Pending section, skips processed rows', () => {
   assert.deepEqual(parsePipeline(CLI_MD), ['https://a.com/1', 'local:jds/x.md']);
+});
+
+test('parsePipelineItems: preserves the whole pending row for UI search', () => {
+  assert.deepEqual(parsePipelineItems(CLI_MD), [
+    { url: 'https://a.com/1', text: '- [ ] https://a.com/1 | Acme | Senior SWE | Remote | 100k' },
+    { url: 'local:jds/x.md', text: '- [ ] local:jds/x.md | Beta | Lead | Leeds' },
+  ]);
 });
 
 test('parsePipeline: a stray empty fence does not hide the Pending section', () => {

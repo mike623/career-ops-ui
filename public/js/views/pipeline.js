@@ -21,6 +21,7 @@ Router.register('pipeline', async () => {
 
   // ── state ──
   let allUrls = [];
+  let allItems = [];
   let filterQuery = '';
   let activeUrl = null;       // currently selected for preview
   let previewBody = '';
@@ -303,7 +304,9 @@ Router.register('pipeline', async () => {
   function renderList() {
     list.innerHTML = '';
     const q = filterQuery.trim().toLowerCase();
-    const filtered = q ? allUrls.filter((u) => u.toLowerCase().includes(q)) : allUrls;
+    const filtered = q
+      ? allItems.filter((item) => (item.text || item.url || '').toLowerCase().includes(q)).map((item) => item.url)
+      : allUrls;
     vFiltered = filtered;
     counter.textContent = `${t('pipe.count', 'In queue')}: ${filtered.length}` +
       (q && filtered.length !== allUrls.length ? ` / ${allUrls.length}` : '');
@@ -354,6 +357,8 @@ Router.register('pipeline', async () => {
   async function refresh() {
     const fresh = await API.get('/api/pipeline');
     allUrls = fresh.urls || [];
+    allItems = (fresh.items || allUrls.map((url) => ({ url, text: url })))
+      .filter((item) => item && item.url);
     renderList();
     renderPreview();
   }
@@ -364,7 +369,10 @@ Router.register('pipeline', async () => {
   });
 
   // ── initial paint ──
-  allUrls = (await API.get('/api/pipeline')).urls || [];
+  const initial = await API.get('/api/pipeline');
+  allUrls = initial.urls || [];
+  allItems = (initial.items || allUrls.map((url) => ({ url, text: url })))
+    .filter((item) => item && item.url);
   renderList();
   renderPreview();
 

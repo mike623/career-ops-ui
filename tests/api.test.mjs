@@ -7,11 +7,13 @@ import { resolve } from 'node:path';
 let server;
 let baseUrl;
 let createApp;
+let projectRoot;
 
 before(async () => {
   // Build a throwaway career-ops project root so api tests don't depend on
   // the user's real cv.md / portals.yml or CI's lack of a parent project.
   const dir = mkdtempSync(resolve(tmpdir(), 'api-test-'));
+  projectRoot = dir;
   mkdirSync(resolve(dir, 'config'), { recursive: true });
   mkdirSync(resolve(dir, 'data'), { recursive: true });
   mkdirSync(resolve(dir, 'modes'), { recursive: true });
@@ -219,6 +221,28 @@ test('POST /api/pipeline + DELETE round-trip', async () => {
 
   const after = await get('/api/pipeline');
   assert.ok(!after.body.urls.includes(url));
+});
+
+test('GET /api/pipeline returns full pending-row items for whole-line filtering', async () => {
+  const url = 'https://whole-line.example.com/job/42';
+  writeFileSync(resolve(projectRoot, 'data', 'pipeline.md'), [
+    '# Job Pipeline',
+    '',
+    '## Pending',
+    '',
+    `- [ ] ${url} | Acme Health | Lead Platform Engineer | Remote UK`,
+    '',
+    '## Processed',
+    '',
+  ].join('\n'));
+
+  const list = await get('/api/pipeline');
+  assert.equal(list.status, 200);
+  assert.deepEqual(list.body.urls, [url]);
+  assert.deepEqual(list.body.items, [{
+    url,
+    text: `- [ ] ${url} | Acme Health | Lead Platform Engineer | Remote UK`,
+  }]);
 });
 
 test('POST /api/pipeline/mark: skip with a reason drops the url from the queue', async () => {

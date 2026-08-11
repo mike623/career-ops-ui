@@ -203,6 +203,12 @@ function pipelineUrlOf(line) {
   return u.startsWith('http') || u.startsWith('local:') ? u : '';
 }
 
+function pipelineItemOf(line) {
+  const url = pipelineUrlOf(line);
+  if (!url) return null;
+  return { url, text: line.trim() };
+}
+
 /**
  * Parse pipeline.md → list of pending URLs.
  * Reads the `## Pending` section (parent CLI format) when present, otherwise
@@ -211,6 +217,16 @@ function pipelineUrlOf(line) {
 export function parsePipeline(text) {
   if (!text) return [];
   return pendingRegion(text).block.split('\n').map(pipelineUrlOf).filter(Boolean);
+}
+
+/**
+ * Parse pipeline.md → pending row metadata for UI filtering.
+ * `url` preserves the existing API contract; `text` preserves the whole row so
+ * the Pipeline page can search company/role/location/notes columns too.
+ */
+export function parsePipelineItems(text) {
+  if (!text) return [];
+  return pendingRegion(text).block.split('\n').map(pipelineItemOf).filter(Boolean);
 }
 
 /**
