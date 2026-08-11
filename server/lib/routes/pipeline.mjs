@@ -13,9 +13,8 @@
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { PATHS, path as projPath } from '../paths.mjs';
-import { parsePipeline, addPipelineUrl, removePipelineUrl, setPipelineState, PIPELINE_STATES } from '../parsers.mjs';
+import { parsePipeline, parsePipelineItems, addPipelineUrl, removePipelineUrl, setPipelineState, PIPELINE_STATES } from '../parsers.mjs';
 import { isValidJobUrl } from '../security.mjs';
-import { safeReadPipeline } from '../store.mjs';
 import { safeGet } from '../safe-fetch.mjs';
 import { withFileLock } from '../file-lock.mjs';
 
@@ -24,7 +23,10 @@ const PREVIEW_MAX_BODY_BYTES = 8000;
 
 export function registerPipelineRoutes(app) {
   app.get('/api/pipeline', (_req, res) => {
-    res.json({ urls: safeReadPipeline() });
+    let text = '';
+    try { text = readFileSync(PATHS.pipeline, 'utf8'); } catch { text = ''; }
+    const items = parsePipelineItems(text);
+    res.json({ urls: items.map((item) => item.url), items });
   });
 
   app.post('/api/pipeline', async (req, res) => {
