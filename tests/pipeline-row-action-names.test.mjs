@@ -30,9 +30,16 @@ test('both row-action buttons have a URL-disambiguated aria-label', () => {
   assert.match(PIPE,
     /'aria-label':\s*t\('pipe\.evaluateBtn'\)\s*\+\s*': '\s*\+\s*shortUrl\(url\)/,
     'evaluate button missing aria-label with shortUrl(url)');
-  // exactly the two row-action labels (no accidental over-application)
+  // done / skip buttons (mark a queued URL `- [x]` / `- [!]`)
+  assert.match(PIPE,
+    /'aria-label':\s*t\('pipe\.markDone', 'Done'\)\s*\+\s*': '\s*\+\s*shortUrl\(url\)/,
+    'done button missing aria-label with shortUrl(url)');
+  assert.match(PIPE,
+    /'aria-label':\s*t\('pipe\.markSkip', 'Skip'\)\s*\+\s*': '\s*\+\s*shortUrl\(url\)/,
+    'skip button missing aria-label with shortUrl(url)');
+  // exactly the four row-action labels (no accidental over-application)
   const labels = PIPE.match(/'aria-label':[^\n]*shortUrl\(url\)/g) || [];
-  assert.equal(labels.length, 2, `expected 2 shortUrl aria-labels, got ${labels.length}`);
+  assert.equal(labels.length, 4, `expected 4 shortUrl aria-labels, got ${labels.length}`);
 });
 
 test('shortUrl is defined before the row builder uses it', () => {

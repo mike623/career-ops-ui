@@ -104,6 +104,14 @@ Router.register('pipeline', async () => {
         }, '↗ ' + t('pipe.openTab', 'Open')),
         c('button', {
           className: 'btn btn-ghost btn-sm',
+          onClick: (e) => markUrl(activeUrl, 'x', e.currentTarget),
+        }, '✓ ' + t('pipe.markDone', 'Done')),
+        c('button', {
+          className: 'btn btn-ghost btn-sm',
+          onClick: (e) => markUrl(activeUrl, '!', e.currentTarget),
+        }, '⏭ ' + t('pipe.markSkip', 'Skip')),
+        c('button', {
+          className: 'btn btn-ghost btn-sm',
           style: { color: 'var(--rausch)' },
           onClick: async (e) => {
             if (!(await UI.confirm(
@@ -160,6 +168,32 @@ Router.register('pipeline', async () => {
     }
   }
 
+  // Mark a queued URL as done (`- [x]`) or skipped (`- [!]`) in
+  // data/pipeline.md, with an optional free-text reason. Reuses the
+  // focus-trapped UI.confirm modal — the reason input rides in its body.
+  async function markUrl(url, state, btn) {
+    const label = state === 'x' ? t('pipe.markDone', 'Done') : t('pipe.markSkip', 'Skip');
+    const input = c('input', {
+      id: 'pipe-mark-reason',
+      className: 'input',
+      'aria-label': t('pipe.reason', 'Reason (optional)'),
+      placeholder: t('pipe.reason', 'Reason (optional)'),
+      style: { width: '100%', marginTop: '8px' },
+    });
+    const body = c('span', { style: { display: 'block' } }, [
+      c('span', { style: { display: 'block', wordBreak: 'break-all', color: 'var(--foggy)' } }, shortUrl(url)),
+      input,
+    ]);
+    if (!(await UI.confirm(label, body, {
+      danger: false, confirmLabel: label, cancelLabel: t('common.cancel', 'Cancel'),
+    }))) return;
+    await UI.withSpinner(btn,
+      () => API.post('/api/pipeline/mark', { url, state, reason: input.value.trim() }));
+    UI.toast(t('pipe.marked', 'Marked') + ': ' + label);
+    if (activeUrl === url) { activeUrl = null; previewBody = ''; previewError = ''; }
+    await refresh();
+  }
+
   function urlRow(url) {
     const isActive = url === activeUrl;
     return c('div', {
@@ -204,6 +238,18 @@ Router.register('pipeline', async () => {
           'aria-label': t('pipe.evaluateBtn') + ': ' + shortUrl(url),
           onClick: (e) => { e.stopPropagation(); Router.go('/evaluate?url=' + encodeURIComponent(url)); },
         }, '▶'),
+        c('button', {
+          className: 'btn btn-ghost btn-sm pipeline-row-done',
+          title: t('pipe.markDone', 'Done'),
+          'aria-label': t('pipe.markDone', 'Done') + ': ' + shortUrl(url),
+          onClick: (e) => { e.stopPropagation(); markUrl(url, 'x', e.currentTarget); },
+        }, '✓'),
+        c('button', {
+          className: 'btn btn-ghost btn-sm pipeline-row-skip',
+          title: t('pipe.markSkip', 'Skip'),
+          'aria-label': t('pipe.markSkip', 'Skip') + ': ' + shortUrl(url),
+          onClick: (e) => { e.stopPropagation(); markUrl(url, '!', e.currentTarget); },
+        }, '⏭'),
         c('button', {
           className: 'btn btn-ghost btn-sm pipeline-row-delete',
           title: t('common.delete', 'Delete'),

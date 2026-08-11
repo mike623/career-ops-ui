@@ -221,6 +221,24 @@ test('POST /api/pipeline + DELETE round-trip', async () => {
   assert.ok(!after.body.urls.includes(url));
 });
 
+test('POST /api/pipeline/mark: skip with a reason drops the url from the queue', async () => {
+  const url = 'https://mark-' + Date.now() + '.example.com/job/2';
+  await post('/api/pipeline', { url });
+
+  const bad = await post('/api/pipeline/mark', { url, state: 'z' });
+  assert.equal(bad.status, 400);
+
+  const missing = await post('/api/pipeline/mark', { url: url + '-nope', state: 'x' });
+  assert.equal(missing.status, 404);
+
+  const marked = await post('/api/pipeline/mark', { url, state: '!', reason: 'comp too low' });
+  assert.equal(marked.status, 200);
+  assert.ok(!marked.body.urls.includes(url));
+
+  const after = await get('/api/pipeline');
+  assert.ok(!after.body.urls.includes(url));
+});
+
 // ───────────────────────── evaluate fallback (no Gemini) ─────────────────────────
 
 test('POST /api/evaluate without GEMINI_API_KEY → manual prompt', async () => {
