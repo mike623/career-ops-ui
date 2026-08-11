@@ -13,7 +13,7 @@
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { PATHS, path as projPath } from '../paths.mjs';
-import { parsePipeline, addPipelineUrl, removePipelineUrl } from '../parsers.mjs';
+import { parsePipeline, addPipelineUrl, removePipelineUrl, setPipelineState, PIPELINE_STATES } from '../parsers.mjs';
 import { isValidJobUrl } from '../security.mjs';
 import { safeReadPipeline } from '../store.mjs';
 import { safeGet } from '../safe-fetch.mjs';
@@ -111,6 +111,34 @@ export function registerPipelineRoutes(app) {
     } finally {
       clearTimeout(timer);
     }
+  });
+
+  // Mark a queued URL done (`- [x]`) or skipped (`- [!]`) with an optional
+  // reason, instead of deleting it. Explicit user write, same lock as the
+  // other pipeline.md mutations.
+  app.post('/api/pipeline/mark', async (req, res) => {
+    const url = (req.body?.url || '').toString().trim();
+    const state = (req.body?.state || '').toString();
+    const reason = (req.body?.reason || '').toString();
+    if (!url) return res.status(400).json({ error: 'url required' });
+    if (!PIPELINE_STATES.includes(state)) {
+      return res.status(400).json({ error: "state must be one of 'x' (done), '!' (skipped), ' ' (pending)" });
+    }
+    const outcome = await withFileLock(PATHS.pipeline, async () => {
+      let content = '';
+      try {
+        content = readFileSync(PATHS.pipeline, 'utf8');
+      } catch {
+        return { _status: 404, body: { error: 'pipeline not found' } };
+      }
+      const updated = setPipelineState(content, url, state, reason);
+      if (updated === content) {
+        return { _status: 404, body: { error: 'url not found in pipeline', url } };
+      }
+      writeFileSync(PATHS.pipeline, updated);
+      return { _status: 200, body: { ok: true, url, state, urls: parsePipeline(updated) } };
+    });
+    res.status(outcome._status).json(outcome.body);
   });
 
   app.delete('/api/pipeline', async (req, res) => {

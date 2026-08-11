@@ -162,20 +162,55 @@ export function parseApplications(text) {
   });
 }
 
+const PENDING_HEADING_RE = /^##[ \t]+(Pending|Pendientes)[ \t]*$/mi;
+
+/**
+ * Locate the pending region of pipeline.md.
+ *
+ * Two formats exist in the wild:
+ *   - Parent CLI format (scan.mjs, modes/pipeline.md): a `## Pending` /
+ *     `## Pendientes` section of `- [ ] {url} | Company | Role | …` rows,
+ *     followed by `## Processed` / `## Procesadas`.
+ *   - Legacy web-ui format: a bare ```fence``` of one URL per line.
+ *
+ * Returns { block, start, end } — offsets into `text` for the region so the
+ * writers can splice without reformatting the rest of the file.
+ */
+function pendingRegion(text) {
+  const heading = text.match(PENDING_HEADING_RE);
+  if (heading) {
+    const start = heading.index + heading[0].length;
+    const rest = text.slice(start);
+    const next = rest.search(/^## /m);
+    const end = next === -1 ? text.length : start + next;
+    return { block: text.slice(start, end), start, end, cli: true };
+  }
+  const fence = text.match(/```([\s\S]*?)```/);
+  if (fence) {
+    const start = fence.index + 3;
+    return { block: fence[1], start, end: start + fence[1].length, cli: false };
+  }
+  return { block: text, start: 0, end: text.length, cli: false };
+}
+
+/** `- [ ] https://…` → `https://…`; done `[x]` / skipped `[!]` rows → ''. */
+function pipelineUrlOf(line) {
+  const l = line.trim().replace(/^-\s+\[ \]\s*/, '');
+  if (l.startsWith('- [')) return ''; // `- [x]` processed row
+  // v1.84.0 (#1017) — a line may carry an optional `| <compensation>` column;
+  // the URL is the first ` | `-delimited token. Bare URLs are unaffected.
+  const u = l.split(/\s+\|\s+/)[0].trim();
+  return u.startsWith('http') || u.startsWith('local:') ? u : '';
+}
+
 /**
  * Parse pipeline.md → list of pending URLs.
- * URLs live inside the first ```code-fence``` block, one per line.
+ * Reads the `## Pending` section (parent CLI format) when present, otherwise
+ * the first ```code-fence``` block (legacy web-ui format).
  */
 export function parsePipeline(text) {
   if (!text) return [];
-  const fenceMatch = text.match(/```([\s\S]*?)```/);
-  const block = fenceMatch ? fenceMatch[1] : text;
-  return block
-    .split('\n')
-    // v1.84.0 (#1017) — a line may carry an optional `| <compensation>` column;
-    // the URL is the first ` | `-delimited token. Bare URLs are unaffected.
-    .map((l) => l.trim().split(/\s+\|\s+/)[0].trim())
-    .filter((l) => l && (l.startsWith('http') || l.startsWith('local:')));
+  return pendingRegion(text).block.split('\n').map(pipelineUrlOf).filter(Boolean);
 }
 
 /**
@@ -218,9 +253,23 @@ export function addPipelineUrl(text, url, opts = {}) {
   const validate = typeof opts.validate === 'function' ? opts.validate : defaultUrlGate;
   if (!validate(trimmed)) return text; // refuse to write an invalid URL
 
-  // Keep existing FULL lines (preserve any trailing `| comp` already written).
-  const fenceMatch = text && text.match(/```([\s\S]*?)```/);
-  const existingLines = (fenceMatch ? fenceMatch[1] : (text || ''))
+  // Dedup on the URL token (ignore the comp column).
+  if (parsePipeline(text).includes(trimmed)) return text;
+
+  const comp = sanitizePipelineComp(opts.comp);
+  const region = text ? pendingRegion(text) : null;
+
+  // Parent CLI format — append a `- [ ]` row at the end of the Pending
+  // section, leaving the Processed section (and every other line) untouched.
+  if (region?.cli) {
+    const row = `- [ ] ${trimmed}${comp ? ` | ${comp}` : ''}\n`;
+    const head = text.slice(0, region.end).replace(/\n*$/, '\n');
+    return head + row + '\n' + text.slice(region.end).replace(/^\n+/, '');
+  }
+
+  // Legacy fence format — rewrite the fence, preserving existing full lines
+  // (including any trailing `| comp` already written).
+  const existingLines = (region ? region.block : '')
     .split('\n')
     .map((l) => l.trim())
     .filter((l) => {
@@ -237,7 +286,6 @@ export function addPipelineUrl(text, url, opts = {}) {
     return (normalizeUrl(u) || u) === incomingKey;
   })) return text;
 
-  const comp = sanitizePipelineComp(opts.comp);
   const newLine = comp ? `${trimmed} | ${comp}` : trimmed;
   const fenceContent = [...existingLines, newLine].join('\n');
   if (text && text.includes('```')) {
@@ -255,12 +303,56 @@ export function addPipelineUrl(text, url, opts = {}) {
  * Remove a URL from pipeline.md.
  */
 export function removePipelineUrl(text, url) {
-  const remaining = parsePipeline(text).filter((u) => u !== url);
-  const fenceContent = remaining.join('\n');
+  if (!text) return text;
+  const region = pendingRegion(text);
+
+  // Parent CLI format — drop only the matching `- [ ]` row, keep the rest of
+  // the line (company/role/notes columns) out of harm's way.
+  if (region.cli) {
+    const kept = region.block
+      .split('\n')
+      .filter((l) => pipelineUrlOf(l) !== url)
+      .join('\n');
+    return text.slice(0, region.start) + kept + text.slice(region.end);
+  }
+
+  const fenceContent = parsePipeline(text).filter((u) => u !== url).join('\n');
   if (text.includes('```')) {
     return text.replace(/```[\s\S]*?```/, '```\n' + fenceContent + '\n```');
   }
   return text;
+}
+
+/** Checkbox states a pipeline row may carry: pending / done / skipped. */
+export const PIPELINE_STATES = [' ', 'x', '!'];
+
+const CHECKBOX_RE = /^(\s*)-\s+\[([ x!])\]\s*/;
+
+/**
+ * Mark a pending pipeline row as done (`- [x]`) or skipped (`- [!]`), with an
+ * optional reason appended as a trailing `| reason` column. Works for both
+ * formats: a CLI `- [ ] url | Company | …` row keeps its columns, a legacy
+ * fence line gains the checkbox prefix. Returns `text` unchanged when the URL
+ * isn't pending.
+ *
+ * ponytail: marked rows stay where they are — we don't move them into the
+ * `## Processed` section the parent CLI uses. They drop out of the pending
+ * list, which is what the queue cares about; move them if the CLI ever needs it.
+ */
+export function setPipelineState(text, url, state, reason = '') {
+  if (!text || !PIPELINE_STATES.includes(state)) return text;
+  const region = pendingRegion(text);
+  let found = false;
+  const lines = region.block.split('\n').map((line) => {
+    if (found || pipelineUrlOf(line) !== url) return line;
+    found = true;
+    const m = line.match(CHECKBOX_RE);
+    const indent = m ? m[1] : (line.match(/^\s*/) || [''])[0];
+    const body = (m ? line.slice(m[0].length) : line).trim();
+    const note = sanitizePipelineComp(reason);
+    return `${indent}- [${state}] ${body}${note ? ` | ${note}` : ''}`;
+  });
+  return found ? text.slice(0, region.start) + lines.join('\n') + text.slice(region.end) : text;
 }
 
 /**
