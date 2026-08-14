@@ -80,7 +80,12 @@ Router.register('pipeline', async () => {
   // posted: …`. Columns 3+ are free-form, so they're classified by
   // shape rather than by position, and anything unrecognized falls
   // through to Notes so nothing in the file is silently dropped.
-  const COMP_RE = /(\d[\d.,]*\s*[-–—]\s*\d|\d{4,}|\d+\s*k\b|[€$£₽¥]|\b(?:usd|eur|gbp|rub|pln|chf|sek|inr|jpy|brl)\b)/i;
+  // A bare 4+ digit run is NOT enough: req IDs like `JR-10423` or
+  // `req 88214` would win the Comp column ahead of the Location
+  // fallback. Either the cell carries a money signal (range, k, symbol,
+  // currency word) or it is a number-only cell.
+  const COMP_RE = /(\d[\d.,]*\s*[-–—]\s*\d|\d+\s*k\b|[€$£₽¥]|\b(?:usd|eur|gbp|rub|pln|chf|sek|inr|jpy|brl)\b)/i;
+  const NUM_ONLY_RE = /^\d[\d.,\s]*$/;
   function classifyCells(cells) {
     const out = { location: '', comp: '', posted: '', notes: [] };
     for (const raw of cells) {
@@ -95,7 +100,7 @@ Router.register('pipeline', async () => {
         continue;
       }
       if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) { out.posted = out.posted || raw; continue; }
-      if (COMP_RE.test(raw)) { out.comp = out.comp || raw; continue; }
+      if (COMP_RE.test(raw) || NUM_ONLY_RE.test(raw)) { out.comp = out.comp || raw; continue; }
       if (!out.location) { out.location = raw; continue; }
       out.notes.push(raw);
     }
@@ -129,8 +134,11 @@ Router.register('pipeline', async () => {
   let sortDir = -1;
   function sortRows(urls) {
     if (!sortKey) return urls;
+    // Parse once per row, not once per comparison — sortRows re-runs on
+    // every filter keystroke and rowMeta() is regex + split heavy.
+    const keyed = new Map(urls.map((u) => [u, String(rowMeta(u)[sortKey])]));
     return urls.slice().sort((a, b) =>
-      sortDir * String(rowMeta(a)[sortKey]).localeCompare(String(rowMeta(b)[sortKey]),
+      sortDir * keyed.get(a).localeCompare(keyed.get(b),
         undefined, { numeric: true, sensitivity: 'base' }));
   }
   // Pure window math (no DOM) so it stays unit-checkable.
@@ -172,9 +180,10 @@ Router.register('pipeline', async () => {
   function sortTh(label, key) {
     if (!key) return c('div', { role: 'columnheader', style: CELL }, label);
     const on = sortKey === key;
-    return c('button', {
-      role: 'columnheader',
-      'aria-sort': on ? (sortDir === 1 ? 'ascending' : 'descending') : 'none',
+    // The button stays a button for AT (an ARIA role would replace its
+    // implicit one and hide the click affordance); the columnheader
+    // role and aria-sort live on the wrapper.
+    const btn = c('button', {
       style: {
         ...CELL, textAlign: 'inherit', background: 'none', border: 'none', padding: 0,
         font: 'inherit', letterSpacing: 'inherit', textTransform: 'inherit',
@@ -185,6 +194,11 @@ Router.register('pipeline', async () => {
         renderList();
       },
     }, label + (on ? (sortDir === 1 ? ' ▲' : ' ▼') : ''));
+    return c('div', {
+      role: 'columnheader',
+      'aria-sort': on ? (sortDir === 1 ? 'ascending' : 'descending') : 'none',
+      style: { ...CELL, minWidth: 0 },
+    }, [btn]);
   }
   function renderHead() {
     head.innerHTML = '';
@@ -415,6 +429,7 @@ Router.register('pipeline', async () => {
     },
   });
   let menuUrl = null;
+  let menuTrigger = null;   // the ⋯ button that opened it — spinner anchor
   function closeMenu() {
     menu.style.display = 'none';
     menuUrl = null;
@@ -431,7 +446,9 @@ Router.register('pipeline', async () => {
         justifyContent: 'flex-start', textAlign: 'left',
         color: opts.danger ? 'var(--rausch)' : 'inherit',
       },
-      onClick: (e) => { e.stopPropagation(); closeMenu(); onClick(e); },
+      // closeMenu() hides the item itself, so in-flight feedback has to
+      // land on the still-visible ⋯ trigger.
+      onClick: (e) => { e.stopPropagation(); const anchor = menuTrigger; closeMenu(); onClick(e, anchor); },
     }, [
       c('span', { style: { width: '14px' } }, icon),
       c('span', { style: { flex: '1' } }, label),
@@ -459,18 +476,19 @@ Router.register('pipeline', async () => {
     menu.appendChild(menuItem(t('pipe.openTab', 'Open'), '↗',
       () => window.open(url, '_blank', 'noopener'), { key: 'o' }));
     menu.appendChild(menuItem(t('pipe.markDone', 'Done'), '✓',
-      (e) => markUrl(url, 'x', e.currentTarget),
+      (e, anchor) => markUrl(url, 'x', anchor || e.currentTarget),
       { key: 'd', className: 'pipeline-row-done', ariaLabel: t('pipe.markDone', 'Done') + ': ' + shortUrl(url) }));
     menu.appendChild(menuItem(t('pipe.markSkip', 'Skip'), '⏭',
-      (e) => markUrl(url, '!', e.currentTarget),
+      (e, anchor) => markUrl(url, '!', anchor || e.currentTarget),
       { key: 's', className: 'pipeline-row-skip', ariaLabel: t('pipe.markSkip', 'Skip') + ': ' + shortUrl(url) }));
     menu.appendChild(menuItem(t('common.delete', 'Delete'), '✕',
-      async () => {
+      async (e, anchor) => {
         if (!(await UI.confirm(
           t('pipe.confirmDelTitle', 'Remove from pipeline?'),
           t('pipe.confirmDel'),
           { danger: true, confirmLabel: t('common.delete', 'Delete'), cancelLabel: t('common.cancel', 'Cancel') }))) return;
-        await API.del('/api/pipeline?url=' + encodeURIComponent(url));
+        await UI.withSpinner(anchor || e.currentTarget,
+          () => API.del('/api/pipeline?url=' + encodeURIComponent(url)));
         UI.toast(t('pipe.deleted'));
         if (activeUrl === url) { activeUrl = null; previewBody = ''; previewError = ''; }
         await refresh();
@@ -482,6 +500,7 @@ Router.register('pipeline', async () => {
     closeMenu();
     buildMenu(url);
     menuUrl = url;
+    menuTrigger = btn;
     menu.style.display = 'block';
     if (!menu.isConnected) document.body.appendChild(menu);
     // Flip above the trigger when the menu would overflow the viewport.
@@ -493,10 +512,10 @@ Router.register('pipeline', async () => {
     btn.setAttribute('aria-expanded', 'true');
     (menu.querySelector('button') || menu).focus();
   }
-  document.addEventListener('click', (e) => {
+  const onDocClick = (e) => {
     if (menuUrl && !menu.contains(e.target) && !e.target.closest?.('.pipeline-row-menu')) closeMenu();
-  });
-  document.addEventListener('keydown', (e) => {
+  };
+  const onDocKey = (e) => {
     if (!menuUrl) return;
     if (e.key === 'Escape') return closeMenu();
     if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -505,8 +524,22 @@ Router.register('pipeline', async () => {
     if (!/^[a-z]$/.test(k)) return; // keeps the attribute selector injection-free
     const hit = menu.querySelector('[data-key="' + k + '"]');
     if (hit) { e.preventDefault(); hit.click(); }
-  });
-  window.addEventListener('hashchange', closeMenu);
+  };
+  document.addEventListener('click', onDocClick);
+  document.addEventListener('keydown', onDocKey);
+  // The route renderer re-runs on every visit to #/pipeline, so the
+  // document-level listeners and the body-level popover must be torn
+  // down when the hash leaves (same pattern as dashboard.js/help.js).
+  const onHashChange = () => {
+    closeMenu();
+    if (!location.hash.startsWith('#/pipeline')) {
+      document.removeEventListener('click', onDocClick);
+      document.removeEventListener('keydown', onDocKey);
+      window.removeEventListener('hashchange', onHashChange);
+      menu.remove();
+    }
+  };
+  window.addEventListener('hashchange', onHashChange);
 
   // Virtualization state (closure-scoped so the single scroll
   // listener always sees the current filtered set).
