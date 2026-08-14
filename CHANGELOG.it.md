@@ -2,6 +2,16 @@
 
 > Questo changelog inizia dalla v1.85.0 — la versione in cui è stata aggiunta la localizzazione italiana. Per le versioni precedenti vedi [🇬🇧 CHANGELOG.md](CHANGELOG.md).
 
+
+## [1.138.0] — 2026-08-14
+
+**La coda della pipeline è una griglia di dati** — colonne ordinabili, un menu di riga ⋯ e scorciatoie da tastiera.
+
+### Aggiunto
+- **La coda viene mostrata come griglia di dati** — colonne `#`, Azienda, Ruolo, Sede, Retribuzione, Data, Note e URL estratte dalle righe di `data/pipeline.md` (`url | Azienda | Ruolo | …`). Le colonne libere sono classificate per forma (data / retribuzione / sede / nota), così nulla del file va perso in silenzio; gli URL senza metadati ricadono sull’host e su uno slug leggibile. Intestazione fissa con ordinamento al clic, per impostazione predefinita gli annunci più recenti in cima. La virtualizzazione oltre le 1000 righe è invariata.
+- **Azioni di riga raccolte in un menu ⋯** — Valuta / Apri / Fatto / Salta / Elimina ora vivono in un unico popover a livello di `body` (un menu dentro la riga verrebbe tagliato dalla card scrollabile); vicino al bordo della finestra si apre verso l’alto e mantiene gli `aria-label` per riga.
+- **Scorciatoie da tastiera nel menu di riga** — `E` valuta, `O` apri, `D` fatto, `S` salta, `X` elimina, `Esc` chiude. I tasti sono fissi (non l’iniziale tradotta) e mostrati come badge su ogni voce, quindi funzionano allo stesso modo in tutte e 17 le lingue.
+
 ## [1.137.0] — 2026-08-11
 
 **Correzioni di leggibilità e rendering** — contrasto in modalità scura, etichette dei grafici e il piano di carriera. Un intervento UX segnalato da un utente (nessun parent-sync).

@@ -2,6 +2,16 @@
 
 > Dieses Changelog beginnt bei v1.85.0 — der Version, in der die deutsche Lokalisierung hinzugefügt wurde. Für frühere Versionen siehe [🇬🇧 CHANGELOG.md](CHANGELOG.md).
 
+
+## [1.138.0] — 2026-08-14
+
+**Die Pipeline-Warteschlange ist ein Datengitter** — sortierbare Spalten, ein ⋯ Zeilenmenü und Tastaturkürzel.
+
+### Hinzugefügt
+- **Die Warteschlange wird als Datengitter gerendert** — die Spalten `#`, Firma, Rolle, Standort, Vergütung, Datum, Notizen und URL werden aus den Zeilen von `data/pipeline.md` (`url | Firma | Rolle | …`) geparst. Freie Spalten werden nach Form klassifiziert (Datum / Vergütung / Standort / Notiz), damit nichts aus der Datei stillschweigend verloren geht; nackte URLs fallen auf Host und einen lesbaren Slug zurück. Klebriger Header mit Klick-Sortierung, standardmäßig die neuesten Ausschreibungen zuerst. Die Virtualisierung ab 1000 Zeilen bleibt unverändert.
+- **Zeilenaktionen in einem ⋯ Menü gebündelt** — Bewerten / Öffnen / Erledigt / Überspringen / Löschen leben jetzt in einem einzigen Popover auf `body`-Ebene (ein Menü in der Zeile würde von der scrollenden Karte abgeschnitten); am Viewport-Rand klappt es nach oben und behält die `aria-label` pro Zeile.
+- **Tastaturkürzel im Zeilenmenü** — `E` bewerten, `O` öffnen, `D` erledigt, `S` überspringen, `X` löschen, `Esc` schließt. Die Tasten sind fest (nicht der übersetzte Anfangsbuchstabe) und werden als Badge an jedem Eintrag angezeigt, funktionieren also in allen 17 Sprachen gleich.
+
 ## [1.137.0] — 2026-08-11
 
 **Lesbarkeits- und Rendering-Fixes** — Dark-Mode-Kontrast, Diagrammbeschriftungen und der Karriereplan. Ein nutzergemeldeter UX-Durchgang (kein Parent-Sync).

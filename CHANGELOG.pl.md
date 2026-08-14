@@ -9,6 +9,16 @@ Tłumaczenia: [🇬🇧 English](CHANGELOG.md) · [🇪🇸 Español](CHANGELOG.
 ---
 
 
+
+## [1.138.0] — 2026-08-14
+
+**Kolejka pipeline’u jest teraz siatką danych** — sortowalne kolumny, jedno menu wiersza ⋯ i skróty klawiszowe.
+
+### Dodane
+- **Kolejka renderuje się jako siatka danych** — kolumny `#`, Firma, Rola, Lokalizacja, Wynagrodzenie, Data, Notatki i URL parsowane z wierszy `data/pipeline.md` (`url | Firma | Rola | …`). Kolumny dowolne są klasyfikowane po kształcie (data / wynagrodzenie / lokalizacja / notatka), więc nic z pliku nie znika po cichu; gołe URL-e wracają do hosta i czytelnego sluga. Przyklejony nagłówek sortowany kliknięciem, domyślnie najnowsze oferty na górze. Wirtualizacja powyżej 1000 wierszy bez zmian.
+- **Akcje wiersza zebrane w menu ⋯** — Oceń / Otwórz / Gotowe / Pomiń / Usuń mieszkają teraz w jednym popoverze na poziomie `body` (menu wewnątrz wiersza przycinałaby przewijana karta); przy krawędzi okna otwiera się w górę i zachowuje `aria-label` każdego wiersza.
+- **Skróty klawiszowe w menu wiersza** — `E` oceń, `O` otwórz, `D` gotowe, `S` pomiń, `X` usuń, `Esc` zamyka. Klawisze są stałe (nie pierwsza litera tłumaczenia) i pokazane jako plakietki przy pozycjach, więc działają tak samo we wszystkich 17 językach.
+
 ## [1.137.0] — 2026-08-11
 
 **Poprawki czytelności i renderowania** — kontrast w trybie ciemnym, etykiety wykresów oraz plan kariery. Przegląd UX zgłoszony przez użytkownika (bez synchronizacji z rodzicem).

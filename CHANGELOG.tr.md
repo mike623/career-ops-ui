@@ -2,6 +2,16 @@
 
 > Bu changelog v1.85.0'dan başlar — Türkçe yerelleştirmenin eklendiği sürüm. Önceki sürümler için bkz. [🇬🇧 CHANGELOG.md](CHANGELOG.md).
 
+
+## [1.138.0] — 2026-08-14
+
+**Pipeline kuyruğu artık bir veri ızgarası** — sıralanabilir sütunlar, tek bir ⋯ satır menüsü ve klavye kısayolları.
+
+### Eklendi
+- **Kuyruk veri ızgarası olarak gösteriliyor** — `data/pipeline.md` satırlarından (`url | Şirket | Rol | …`) ayrıştırılan `#`, Şirket, Rol, Konum, Ücret, Tarih, Notlar ve URL sütunları. Serbest sütunlar biçime göre sınıflandırılır (tarih / ücret / konum / not), böylece dosyadaki hiçbir şey sessizce düşmez; meta verisi olmayan URL’ler ana makine adına ve okunaklı bir slug’a geri düşer. Yapışkan başlıkta tıklayarak sıralama, varsayılan olarak en yeni ilan üstte. 1000 satır üstündeki sanallaştırma değişmedi.
+- **Satır eylemleri bir ⋯ menüsünde toplandı** — Değerlendir / Aç / Tamam / Atla / Sil artık `body` düzeyinde tek bir popover içinde (satır içi menü kaydırılan kart tarafından kırpılırdı); ekran kenarına yakınken yukarı açılır ve satır başına `aria-label` korunur.
+- **Satır menüsünde klavye kısayolları** — `E` değerlendir, `O` aç, `D` tamam, `S` atla, `X` sil, `Esc` kapatır. Tuşlar sabittir (çevrilmiş ilk harf değil) ve her öğede rozet olarak gösterilir, bu yüzden 17 dilin hepsinde aynı çalışır.
+
 ## [1.137.0] — 2026-08-11
 
 **Okunabilirlik ve render düzeltmeleri** — karanlık mod kontrastı, grafik etiketleri ve kariyer planı. Kullanıcı tarafından bildirilen bir UX geçişi (üst proje senkronizasyonu yok).

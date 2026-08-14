@@ -8,6 +8,16 @@ Oversættelser: [🇬🇧 English](CHANGELOG.md) · [🇪🇸 Español](CHANGELO
 
 ---
 
+
+## [1.138.0] — 2026-08-14
+
+**Pipeline-køen er nu et datagitter** — sorterbare kolonner, én ⋯ rækkemenu og tastaturgenveje.
+
+### Tilføjet
+- **Køen vises som et datagitter** — kolonnerne `#`, Virksomhed, Rolle, Lokation, Løn, Dato, Noter og URL parses fra rækkerne i `data/pipeline.md` (`url | Virksomhed | Rolle | …`). Frie kolonner klassificeres efter form (dato / løn / lokation / note), så intet i filen forsvinder i stilhed; nøgne URL’er falder tilbage til værten og et pænt slug. Klæbrig header med klik-sortering, nyeste opslag først som standard. Virtualisering over 1000 rækker er uændret.
+- **Rækkehandlinger samlet i en ⋯ menu** — Evaluér / Åbn / Færdig / Spring over / Slet bor nu i én popover på `body`-niveau (en menu inde i rækken ville blive klippet af det scrollende kort); den åbner opad nær vinduets kant og bevarer `aria-label` pr. række.
+- **Tastaturgenveje i rækkemenuen** — `E` evaluér, `O` åbn, `D` færdig, `S` spring over, `X` slet, `Esc` lukker. Tasterne er faste (ikke det oversatte første bogstav) og vises som badges på hvert punkt, så de virker ens på alle 17 sprog.
+
 ## [1.137.0] — 2026-08-11
 
 **Læsbarheds- og renderingsrettelser** — mørk-tilstand-kontrast, diagramlabels og karriereplanen. En brugerrapporteret UX-gennemgang (ingen forælder-synkronisering).

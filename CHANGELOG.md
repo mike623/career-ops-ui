@@ -8,6 +8,16 @@ Translations: [🇪🇸 Español](CHANGELOG.es.md) · [🇧🇷 Português](CHAN
 
 
 
+
+## [1.138.0] — 2026-08-14
+
+**Pipeline queue is a data grid** — sortable columns, one ⋯ row menu, and keyboard shortcuts.
+
+### Added
+- **The queue renders as a data grid** — `#`, Company, Role, Location, Comp, Date, Notes, URL columns parsed from `data/pipeline.md` rows (`url | Company | Role | …`). Free-form columns are classified by shape (date / comp / location / note), so nothing in the file is silently dropped; bare URLs fall back to host + a prettified slug. Sticky click-to-sort header, newest posting first by default. Virtualization above 1000 rows is unchanged.
+- **Row actions collapsed into a ⋯ menu** — Evaluate / Open / Done / Skip / Delete now live in one body-level popover (an in-row menu would be clipped by the scrolling card); it flips above the trigger near the viewport edge and keeps the per-row `aria-label`s.
+- **Keyboard shortcuts in the row menu** — `E` evaluate, `O` open, `D` done, `S` skip, `X` delete, `Esc` closes. The keys are fixed (not localized first letters) and shown as badges on each item, so they read the same in all 17 locales.
+
 ## [1.137.0] — 2026-08-11
 
 **Readability & rendering fixes** — dark-mode contrast, chart labels, and the career plan. A user-reported UX pass (no parent-sync).

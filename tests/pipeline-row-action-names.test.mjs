@@ -21,25 +21,36 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PIPE = readFileSync(
   resolve(__dirname, '..', 'public', 'js', 'views', 'pipeline.js'), 'utf8');
 
-test('both row-action buttons have a URL-disambiguated aria-label', () => {
-  // delete button: aria-label = Delete + shortUrl(url)
+test('all four row actions have a URL-disambiguated aria-label', () => {
+  // v1.138.0 — the row actions moved into a ⋯ menu (menuItem(..., {
+  // ariaLabel })), but the F-V54-B contract is unchanged: each
+  // destructive/stateful action is named by a truncated URL.
   assert.match(PIPE,
-    /'aria-label':\s*t\('common\.delete', 'Delete'\)\s*\+\s*': '\s*\+\s*shortUrl\(url\)/,
-    'delete button missing aria-label with shortUrl(url)');
-  // evaluate button: aria-label = evaluateBtn + shortUrl(url)
+    /ariaLabel:\s*t\('common\.delete', 'Delete'\)\s*\+\s*': '\s*\+\s*shortUrl\(url\)/,
+    'delete action missing aria-label with shortUrl(url)');
   assert.match(PIPE,
-    /'aria-label':\s*t\('pipe\.evaluateBtn'\)\s*\+\s*': '\s*\+\s*shortUrl\(url\)/,
-    'evaluate button missing aria-label with shortUrl(url)');
-  // done / skip buttons (mark a queued URL `- [x]` / `- [!]`)
+    /ariaLabel:\s*t\('pipe\.evaluateBtn'\)\s*\+\s*': '\s*\+\s*shortUrl\(url\)/,
+    'evaluate action missing aria-label with shortUrl(url)');
   assert.match(PIPE,
-    /'aria-label':\s*t\('pipe\.markDone', 'Done'\)\s*\+\s*': '\s*\+\s*shortUrl\(url\)/,
-    'done button missing aria-label with shortUrl(url)');
+    /ariaLabel:\s*t\('pipe\.markDone', 'Done'\)\s*\+\s*': '\s*\+\s*shortUrl\(url\)/,
+    'done action missing aria-label with shortUrl(url)');
   assert.match(PIPE,
-    /'aria-label':\s*t\('pipe\.markSkip', 'Skip'\)\s*\+\s*': '\s*\+\s*shortUrl\(url\)/,
-    'skip button missing aria-label with shortUrl(url)');
+    /ariaLabel:\s*t\('pipe\.markSkip', 'Skip'\)\s*\+\s*': '\s*\+\s*shortUrl\(url\)/,
+    'skip action missing aria-label with shortUrl(url)');
   // exactly the four row-action labels (no accidental over-application)
-  const labels = PIPE.match(/'aria-label':[^\n]*shortUrl\(url\)/g) || [];
+  const labels = PIPE.match(/ariaLabel:[^\n]*shortUrl\(url\)/g) || [];
   assert.equal(labels.length, 4, `expected 4 shortUrl aria-labels, got ${labels.length}`);
+  // menuItem() must actually apply the option to the DOM node.
+  assert.match(PIPE, /setAttribute\('aria-label', opts\.ariaLabel\)/,
+    'menuItem must set the aria-label attribute it was given');
+});
+
+test('the ⋯ trigger is a named, state-announcing menu button', () => {
+  assert.match(PIPE, /'aria-haspopup': 'menu'/, 'trigger must declare aria-haspopup=menu');
+  assert.match(PIPE, /'aria-expanded': 'false'/, 'trigger must start collapsed');
+  assert.match(PIPE, /setAttribute\('aria-expanded', 'true'\)/, 'opening must set aria-expanded');
+  // Named by the row's role so N triggers don't collapse to N "button"s.
+  assert.match(PIPE, /'aria-label': t\('track\.col\.actions', 'Actions'\) \+ ': ' \+ m\.role/);
 });
 
 test('shortUrl is defined before the row builder uses it', () => {

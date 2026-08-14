@@ -8,6 +8,16 @@ Traduções: [🇬🇧 English](CHANGELOG.md) · [🇪🇸 Español](CHANGELOG.e
 
 ---
 
+
+## [1.138.0] — 2026-08-14
+
+**A fila do pipeline virou uma tabela de dados** — colunas ordenáveis, um menu de linha ⋯ e atalhos de teclado.
+
+### Adicionado
+- **A fila é exibida como tabela de dados** — colunas `#`, Empresa, Cargo, Local, Remuneração, Data, Notas e URL extraídas das linhas de `data/pipeline.md` (`url | Empresa | Cargo | …`). Colunas livres são classificadas pelo formato (data / remuneração / local / nota), então nada é descartado em silêncio; URLs sem metadados usam o host e um slug legível. Cabeçalho fixo com ordenação por clique, por padrão a vaga mais recente primeiro. A virtualização acima de 1000 linhas continua igual.
+- **Ações da linha reunidas em um menu ⋯** — Avaliar / Abrir / Concluído / Pular / Excluir agora ficam em um único popover no nível do `body` (um menu dentro da linha seria cortado pelo cartão com rolagem); ele abre para cima perto da borda da janela e mantém os `aria-label` de cada linha.
+- **Atalhos de teclado no menu da linha** — `E` avaliar, `O` abrir, `D` concluído, `S` pular, `X` excluir, `Esc` fecha. As teclas são fixas (não a inicial traduzida) e aparecem como etiquetas, funcionando igual nos 17 idiomas.
+
 ## [1.137.0] — 2026-08-11
 
 **Correções de legibilidade e renderização** — contraste no modo escuro, rótulos de gráficos e o plano de carreira. Um ajuste de UX reportado por usuário (sem parent-sync).

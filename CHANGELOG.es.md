@@ -11,6 +11,16 @@ Traducciones: [🇬🇧 English](CHANGELOG.md) · [🇧🇷 Português](CHANGELO
 ---
 
 
+
+## [1.138.0] — 2026-08-14
+
+**La cola del pipeline es una tabla de datos** — columnas ordenables, un menú de fila ⋯ y atajos de teclado.
+
+### Añadido
+- **La cola se muestra como tabla de datos** — columnas `#`, Empresa, Puesto, Ubicación, Salario, Fecha, Notas y URL extraídas de las filas de `data/pipeline.md` (`url | Empresa | Puesto | …`). Las columnas libres se clasifican por forma (fecha / salario / ubicación / nota), así nada se pierde; las URL sin metadatos usan el host y un slug legible. Cabecera fija con orden al hacer clic, por defecto la publicación más reciente primero. La virtualización por encima de 1000 filas no cambia.
+- **Las acciones de fila se agrupan en un menú ⋯** — Evaluar / Abrir / Hecho / Saltar / Eliminar viven ahora en un único popover a nivel de `body` (un menú dentro de la fila quedaría recortado por la tarjeta con scroll); se abre hacia arriba cerca del borde de la ventana y conserva los `aria-label` por fila.
+- **Atajos de teclado en el menú de fila** — `E` evaluar, `O` abrir, `D` hecho, `S` saltar, `X` eliminar, `Esc` cierra. Las teclas son fijas (no la inicial traducida) y se muestran como insignias, así funcionan igual en los 17 idiomas.
+
 ## [1.137.0] — 2026-08-11
 
 **Correcciones de legibilidad y renderizado** — contraste en modo oscuro, etiquetas de gráficos y el plan de carrera. Una revisión de UX motivada por un reporte de usuario (sin parent-sync).

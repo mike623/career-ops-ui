@@ -11,6 +11,16 @@ Traductions : [🇬🇧 English](CHANGELOG.md) · [🇪🇸 Español](CHANGELOG.
 ---
 
 
+
+## [1.138.0] — 2026-08-14
+
+**La file du pipeline devient un tableau de données** — colonnes triables, un menu de ligne ⋯ et des raccourcis clavier.
+
+### Ajouté
+- **La file s’affiche en tableau de données** — colonnes `#`, Entreprise, Poste, Lieu, Rémunération, Date, Notes et URL extraites des lignes de `data/pipeline.md` (`url | Entreprise | Poste | …`). Les colonnes libres sont classées par forme (date / rémunération / lieu / note), donc rien n’est perdu en silence ; les URL sans métadonnées retombent sur l’hôte et un slug lisible. En-tête collant triable au clic, offres les plus récentes en premier par défaut. La virtualisation au-delà de 1000 lignes est inchangée.
+- **Actions de ligne regroupées dans un menu ⋯** — Évaluer / Ouvrir / Fait / Passer / Supprimer vivent désormais dans un seul popover au niveau du `body` (un menu dans la ligne serait rogné par la carte défilante) ; il s’ouvre vers le haut près du bord de la fenêtre et conserve les `aria-label` par ligne.
+- **Raccourcis clavier dans le menu de ligne** — `E` évaluer, `O` ouvrir, `D` fait, `S` passer, `X` supprimer, `Esc` ferme. Les touches sont fixes (pas l’initiale traduite) et affichées en badge sur chaque entrée, donc identiques dans les 17 langues.
+
 ## [1.137.0] — 2026-08-11
 
 **Corrections de lisibilité et de rendu** — contraste en mode sombre, libellés de graphiques et plan de carrière. Une passe UX signalée par un utilisateur (pas de parent-sync).
