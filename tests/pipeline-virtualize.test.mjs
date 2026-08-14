@@ -64,8 +64,10 @@ test('pure window math helper exists and is sane', () => {
 });
 
 test('virtualized rows keep their disambiguated action aria-labels', () => {
-  // urlRow() (shared by both paths) must still build the
-  // aria-labelled ▶ / ✕ buttons — regression lock on F-V54-B.
-  assert.match(PIPE, /'aria-label': t\('pipe\.evaluateBtn'\) \+ ': ' \+ shortUrl\(url\)/);
-  assert.match(PIPE, /'aria-label': t\('common\.delete', 'Delete'\) \+ ': ' \+ shortUrl\(url\)/);
+  // urlRow() (shared by both paths) must still expose the
+  // aria-labelled ▶ / ✕ actions — regression lock on F-V54-B.
+  // v1.138.0 — the actions live in the shared ⋯ row menu; the labels
+  // are passed as menuItem() options and applied via setAttribute.
+  assert.match(PIPE, /ariaLabel: t\('pipe\.evaluateBtn'\) \+ ': ' \+ shortUrl\(url\)/);
+  assert.match(PIPE, /ariaLabel: t\('common\.delete', 'Delete'\) \+ ': ' \+ shortUrl\(url\)/);
 });
