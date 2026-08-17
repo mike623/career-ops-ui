@@ -47,6 +47,9 @@ export const PATHS = {
   activityLog: path('data', 'activity.jsonl'),
   roleStats: path('data', 'role-stats.jsonl'),
   llmUsage: path('data', 'llm-usage.jsonl'),
+  // Written by the parent's ingest-email-labels.mjs, one JSON line per sweep.
+  // Read-only here — see lib/email-ingest-log.mjs.
+  emailIngestRuns: path('data', 'email-ingest-runs.jsonl'),
   reportsDir: path('reports'),
   jdsDir: path('jds'),
   outputDir: path('output'),
