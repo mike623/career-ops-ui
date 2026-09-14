@@ -8,7 +8,7 @@
  * Used by routes /api/evaluate, /api/deep, /api/mode/:slug, /api/apply-helper.
  */
 import { existsSync, readFileSync } from 'node:fs';
-import { PATHS, path as projPath } from './paths.mjs';
+import { PATHS, path as projPath, modePath } from './paths.mjs';
 import { slugify } from './parsers.mjs';
 
 // Locale code → English language name. Used by buildLocaleDirective so
@@ -218,7 +218,7 @@ export function bundleProjectContext(opts = {}) {
     { label: 'config/two-pager.yml (candidate two-pager — loves/must_haves = positive signals, hates/deal_breakers = negative)', path: PATHS.twoPager },
     ...modeSlugs.map((slug) => ({
       label: `modes/${slug}.md`,
-      path: projPath('modes', `${slug}.md`),
+      path: modePath(`${slug}.md`),
     })),
     // v1.90.0 (Epic 15) — caller-supplied extras (e.g. interview-prep/story-bank.md
     // for the mock interview). Kept last so the core CV/profile/two-pager lead.

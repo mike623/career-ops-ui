@@ -14,7 +14,7 @@
  */
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { PATHS, PROJECT_ROOT, WEB_UI_ROOT, path as projPath } from '../paths.mjs';
+import { PATHS, PROJECT_ROOT, DATA_ROOT, WEB_UI_ROOT, path as projPath, repoPath } from '../paths.mjs';
 import { isPubliclyExposed } from '../security.mjs';
 import {
   safeReadApps,
@@ -71,12 +71,17 @@ export function registerHealthRoutes(app) {
     // Required checks — system can't function without these
     checks.push({ name: 'Node version', required: true, ok: parseInt(process.versions.node, 10) >= 18, value: hidden ?? `v${process.versions.node}` });
     checks.push({ name: 'Project root', required: true, ok: existsSync(PROJECT_ROOT), value: hidden ?? PROJECT_ROOT });
+    // Shown only when `.career-ops-data` / CAREER_OPS_DATA_DIR moved the user
+    // layer elsewhere — otherwise it equals the project root and says nothing.
+    if (DATA_ROOT !== PROJECT_ROOT) {
+      checks.push({ name: 'Data root', required: true, ok: existsSync(DATA_ROOT), value: hidden ?? DATA_ROOT });
+    }
     checks.push({ name: 'cv.md', required: true, ok: existsSync(PATHS.cv) });
     checks.push({ name: 'config/profile.yml', required: true, ok: existsSync(PATHS.profile) });
     checks.push({ name: 'portals.yml', required: true, ok: existsSync(PATHS.portals) });
     checks.push({ name: 'data/applications.md', required: true, ok: existsSync(PATHS.applications) });
     checks.push({ name: 'data/pipeline.md', required: true, ok: existsSync(PATHS.pipeline) });
-    checks.push({ name: 'modes/oferta.md', required: true, ok: existsSync(projPath('modes', 'oferta.md')) });
+    checks.push({ name: 'modes/oferta.md', required: true, ok: existsSync(repoPath('modes', 'oferta.md')) });
 
     // FIX-H6 — flag fresh installs that still have placeholder profile data.
     const profileCustomized = checkProfileCustomized();
@@ -139,9 +144,9 @@ export function registerHealthRoutes(app) {
     // an optional health-check row was redundant noise on the dashboard.
     // Playwright + parent deps — required for PDF generation and liveness
     // checks; we don't install them but surface the gap.
-    const playwrightInstalled = existsSync(projPath('node_modules', 'playwright'));
+    const playwrightInstalled = existsSync(repoPath('node_modules', 'playwright'));
     checks.push({ name: 'Playwright (parent node_modules)', required: false, ok: playwrightInstalled, value: playwrightInstalled ? 'installed' : 'run: cd $CAREER_OPS_ROOT && npm install && npx playwright install chromium' });
-    const parentDepsInstalled = existsSync(projPath('node_modules', 'js-yaml'));
+    const parentDepsInstalled = existsSync(repoPath('node_modules', 'js-yaml'));
     checks.push({ name: 'Parent project dependencies', required: false, ok: parentDepsInstalled, value: parentDepsInstalled ? 'installed' : 'run: cd $CAREER_OPS_ROOT && npm install' });
     // FIX-C6 — directories the scripts write into (auto-created on
     // first write; surfacing the state mirrors `node doctor.mjs`).
