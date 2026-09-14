@@ -18,7 +18,7 @@ import multer from 'multer';
 import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import yaml from 'js-yaml';
-import { PATHS, path as projPath } from '../paths.mjs';
+import { PATHS, path as projPath, modePath } from '../paths.mjs';
 import { stripDangerousMarkdown, sanitizePathName } from '../security.mjs';
 import { logActivity } from '../activity-log.mjs';
 import { importDocumentToMarkdown, MAX_UPLOAD_BYTES } from '../cv-import.mjs';
@@ -383,11 +383,19 @@ export function registerContentRoutes(app) {
 
   // ─── Modes (prompt templates) ───
   app.get('/api/modes', (_req, res) => {
-    if (!existsSync(PATHS.modesDir)) return res.json({ modes: [] });
-    const list = readdirSync(PATHS.modesDir)
-      .filter((f) => f.endsWith('.md'))
-      .map((f) => f.replace(/\.md$/, ''));
-    res.json({ modes: list });
+    // `modes/` straddles both roots once `.career-ops-data` moves the user
+    // layer: the shipped modes stay in the checkout while `_profile.md` /
+    // `_custom.md` / `_brief.md` follow the data root. List the union, or the
+    // user's own modes would be missing from the picker — a single readdir of
+    // either directory is only correct when the two roots coincide.
+    const names = new Set();
+    for (const dir of new Set([PATHS.modesDir, projPath('modes')])) {
+      if (!existsSync(dir)) continue;
+      for (const f of readdirSync(dir)) {
+        if (f.endsWith('.md')) names.add(f.replace(/\.md$/, ''));
+      }
+    }
+    res.json({ modes: [...names].sort() });
   });
 
   // G-008 (v1.15.0) — modes/_profile.md as a first-class editable file.
@@ -545,7 +553,7 @@ export function registerContentRoutes(app) {
   app.get('/api/modes/:name', (req, res) => {
     const name = sanitizePathName(req.params.name);
     if (!name) return res.status(400).json({ error: 'invalid mode name' });
-    const file = projPath('modes', `${name}.md`);
+    const file = modePath(`${name}.md`);
     if (!existsSync(file)) return res.status(404).json({ error: 'not found' });
     res.type('text/plain').send(readFileSync(file, 'utf8'));
   });

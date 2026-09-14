@@ -17,7 +17,7 @@
  * are present. Fallback chain: Anthropic → Gemini → manual.
  */
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, mkdirSync, unlinkSync } from 'node:fs';
-import { PATHS, path as projPath } from '../paths.mjs';
+import { PATHS, path as projPath, modePath } from '../paths.mjs';
 import { slugify, today } from '../parsers.mjs';
 import { runNodeScript } from '../runner.mjs';
 import { runAnthropic, hasAnthropicKey, hasGeminiKey } from '../anthropic.mjs';
@@ -407,7 +407,7 @@ export function registerLlmRoutes(app) {
     if (!MODE_ALLOWLIST.includes(slug)) {
       return res.status(404).json({ error: `unknown mode "${slug}"` });
     }
-    const modeFile = projPath('modes', `${slug}.md`);
+    const modeFile = modePath(`${slug}.md`);
     if (!existsSync(modeFile)) {
       return res.status(404).json({ error: `modes/${slug}.md not found in parent project` });
     }
