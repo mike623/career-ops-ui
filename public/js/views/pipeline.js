@@ -21,6 +21,9 @@ Router.register('pipeline', async () => {
 
   // ── state ──
   let allUrls = [];
+  let allItems = [];
+  let itemByUrl = new Map();   // url → pending-row item (grid cells)
+  let rowIndex = new Map();    // url → 1-based position in the rendered order
   let filterQuery = '';
   let activeUrl = null;       // currently selected for preview
   let previewBody = '';
@@ -34,8 +37,110 @@ Router.register('pipeline', async () => {
   // small buffer (a vanilla-JS react-window). At/below it we keep the
   // original simple full render so typical pipelines are unchanged.
   const VIRTUALIZE_THRESHOLD = 1000;
-  const ROW_H = 56;   // measured uniform row height (px) incl. gap
+  const ROW_H = 40;   // measured uniform row height (px), one grid line
   const BUFFER = 5;   // rows rendered above & below the viewport
+
+  // v1.138.0 — the queue is now a data grid (ag-grid-ish): one shared
+  // column template drives the sticky header and every row, so the
+  // virtualized absolute rows stay aligned with the header.
+  const GRID_COLS = '40px minmax(100px,1.1fr) minmax(150px,1.7fr) minmax(90px,.9fr) '
+    + 'minmax(80px,.8fr) minmax(90px,.7fr) minmax(90px,1fr) minmax(120px,1.3fr) 44px';
+  const CELL = {
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+    fontSize: '13px', minWidth: 0,
+  };
+
+  // Row metadata for the grid. Parent CLI rows are
+  // `- [ ] <url> | Company | Role [| extra]`; bare rows have no cells,
+  // so company/role fall back to the host and a prettified URL slug.
+  function prettySlug(url) {
+    const s = String(url || '').split('?')[0].replace(/\/+$/, '');
+    const segs = s.split('/').filter(Boolean);
+    // A bare `…/posting/123` tail says nothing on its own — pull the
+    // preceding segment in so the Role cell reads "posting 123".
+    const last = (/^\d+$/.test(segs[segs.length - 1] || '') && segs.length > 1
+      ? segs.slice(-2).join('-') : segs[segs.length - 1]) || s;
+    return last.replace(/\.md$/i, '')
+      .replace(/^[a-z]*-?\d{4,}-?/i, '')
+      .replace(/[-_]+/g, ' ')
+      .trim() || last;
+  }
+  // `local:jds/<board>-<id>-<company>-<role>.md` rows have no host —
+  // fall back to the board prefix of the filename so the Company /
+  // URL columns still say something sortable.
+  function rowSource(url) {
+    if (/^local:/i.test(String(url))) {
+      const file = String(url).split('/').pop() || '';
+      return (file.split('-')[0] || 'local').toLowerCase();
+    }
+    return shortHost(url);
+  }
+  // Every column pipeline.md can carry (modes/pipeline.md → "Format of
+  // pipeline.md"): `url | Company | Role | Location | Comp | note: … |
+  // posted: …`. Columns 3+ are free-form, so they're classified by
+  // shape rather than by position, and anything unrecognized falls
+  // through to Notes so nothing in the file is silently dropped.
+  // A bare 4+ digit run is NOT enough: req IDs like `JR-10423` or
+  // `req 88214` would win the Comp column ahead of the Location
+  // fallback. Either the cell carries a money signal (range, k, symbol,
+  // currency word) or it is a number-only cell.
+  const COMP_RE = /(\d[\d.,]*\s*[-–—]\s*\d|\d+\s*k\b|[€$£₽¥]|\b(?:usd|eur|gbp|rub|pln|chf|sek|inr|jpy|brl)\b)/i;
+  const NUM_ONLY_RE = /^\d[\d.,\s]*$/;
+  function classifyCells(cells) {
+    const out = { location: '', comp: '', posted: '', notes: [] };
+    for (const raw of cells) {
+      const m = raw.match(/^(note|notes|posted|added|comp|salary|location|loc)\s*:\s*(.+)$/i);
+      if (m) {
+        const key = m[1].toLowerCase();
+        const val = m[2].trim();
+        if (key === 'posted' || key === 'added') out.posted = out.posted || val;
+        else if (key === 'comp' || key === 'salary') out.comp = out.comp || val;
+        else if (key === 'location' || key === 'loc') out.location = out.location || val;
+        else out.notes.push(val);
+        continue;
+      }
+      if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) { out.posted = out.posted || raw; continue; }
+      if (COMP_RE.test(raw) || NUM_ONLY_RE.test(raw)) { out.comp = out.comp || raw; continue; }
+      if (!out.location) { out.location = raw; continue; }
+      out.notes.push(raw);
+    }
+    return out;
+  }
+  function rowMeta(url) {
+    const item = itemByUrl.get(url);
+    const cells = (item ? item.text : '')
+      .replace(/^-\s+\[[^\]]*\]\s*/, '')
+      .split(/\s+\|\s+/).slice(1)
+      .map((s) => s.trim()).filter(Boolean);
+    const extra = classifyCells(cells.slice(2));
+    return {
+      url,
+      company: cells[0] || rowSource(url),
+      role: cells[1] || prettySlug(url),
+      location: extra.location,
+      comp: extra.comp,
+      posted: extra.posted,
+      notes: extra.notes.join(' · '),
+      host: rowSource(url),
+    };
+  }
+
+  // ── sort state ──
+  // Default: newest posting first. Rows with no date keep their
+  // file order behind the dated ones (Array#sort is stable), so the
+  // queue's own priority still shows through where there's no signal.
+  // Click a header to re-sort; `sortKey = null` would mean file order.
+  let sortKey = 'posted';
+  let sortDir = -1;
+  function sortRows(urls) {
+    if (!sortKey) return urls;
+    // Parse once per row, not once per comparison — sortRows re-runs on
+    // every filter keystroke and rowMeta() is regex + split heavy.
+    const keyed = new Map(urls.map((u) => [u, String(rowMeta(u)[sortKey])]));
+    return urls.slice().sort((a, b) =>
+      sortDir * keyed.get(a).localeCompare(keyed.get(b),
+        undefined, { numeric: true, sensitivity: 'base' }));
+  }
   // Pure window math (no DOM) so it stays unit-checkable.
   function computeWindow(scrollTop, rowH, total, viewportH, buffer) {
     const first = Math.floor(scrollTop / rowH);
@@ -56,7 +161,64 @@ Router.register('pipeline', async () => {
     placeholder: t('pipe.filter', 'Filter URLs…'),
     style: { maxWidth: '320px' },
   });
-  const list = c('div', { id: 'pipeline-list', className: 'card', style: { display: 'flex', flexDirection: 'column', gap: '6px' } });
+  const list = c('div', {
+    id: 'pipeline-list', role: 'rowgroup',
+    style: { display: 'flex', flexDirection: 'column', gap: '0' },
+  });
+  // Sticky column header — shares GRID_COLS with every row so the
+  // virtualized (absolutely positioned) rows stay aligned.
+  const head = c('div', {
+    id: 'pipeline-head', role: 'row',
+    style: {
+      display: 'grid', gridTemplateColumns: GRID_COLS, gap: '10px',
+      alignItems: 'center', padding: '0 12px', height: '38px',
+      borderBottom: '1px solid var(--slate)', background: 'var(--panel-2, #f5f6f8)',
+      fontSize: '12px', fontWeight: 700, letterSpacing: '.03em', textTransform: 'uppercase',
+      color: 'var(--foggy)', position: 'sticky', top: 0, zIndex: 1,
+    },
+  });
+  function sortTh(label, key) {
+    if (!key) return c('div', { role: 'columnheader', style: CELL }, label);
+    const on = sortKey === key;
+    // The button stays a button for AT (an ARIA role would replace its
+    // implicit one and hide the click affordance); the columnheader
+    // role and aria-sort live on the wrapper.
+    const btn = c('button', {
+      style: {
+        ...CELL, textAlign: 'inherit', background: 'none', border: 'none', padding: 0,
+        font: 'inherit', letterSpacing: 'inherit', textTransform: 'inherit',
+        color: on ? 'var(--hof)' : 'inherit', cursor: 'pointer',
+      },
+      onClick: () => {
+        if (sortKey === key) sortDir = -sortDir; else { sortKey = key; sortDir = 1; }
+        renderList();
+      },
+    }, label + (on ? (sortDir === 1 ? ' ▲' : ' ▼') : ''));
+    return c('div', {
+      role: 'columnheader',
+      'aria-sort': on ? (sortDir === 1 ? 'ascending' : 'descending') : 'none',
+      style: { ...CELL, minWidth: 0 },
+    }, [btn]);
+  }
+  function renderHead() {
+    head.innerHTML = '';
+    head.appendChild(sortTh('#', null));
+    head.appendChild(sortTh(t('scan.col.company', 'Company'), 'company'));
+    head.appendChild(sortTh(t('scan.col.role', 'Role'), 'role'));
+    head.appendChild(sortTh(t('scan.col.loc', 'Location'), 'location'));
+    head.appendChild(sortTh(t('scan.col.salary', 'Salary'), 'comp'));
+    head.appendChild(sortTh(t('track.col.date', 'Date'), 'posted'));
+    head.appendChild(sortTh(t('followup.notesLbl', 'Notes'), 'notes'));
+    head.appendChild(sortTh('URL', 'host'));
+    // The actions column is icon-width; its visible label would clip, so
+    // the header is named for assistive tech only.
+    const actionsTh = c('div', {
+      role: 'columnheader', title: t('track.col.actions', 'Actions'),
+      style: { ...CELL, textAlign: 'right' },
+    }, '⋯');
+    actionsTh.setAttribute('aria-label', t('track.col.actions', 'Actions'));
+    head.appendChild(actionsTh);
+  }
   // v1.48.0 (WS2 #22) — the preview is a polite live region with an
   // accessible name; a fetch failure renders a distinct role=alert
   // block, not disguised as preview body text.
@@ -102,6 +264,14 @@ Router.register('pipeline', async () => {
           className: 'btn btn-ghost btn-sm',
           onClick: () => window.open(activeUrl, '_blank', 'noopener'),
         }, '↗ ' + t('pipe.openTab', 'Open')),
+        c('button', {
+          className: 'btn btn-ghost btn-sm',
+          onClick: (e) => markUrl(activeUrl, 'x', e.currentTarget),
+        }, '✓ ' + t('pipe.markDone', 'Done')),
+        c('button', {
+          className: 'btn btn-ghost btn-sm',
+          onClick: (e) => markUrl(activeUrl, '!', e.currentTarget),
+        }, '⏭ ' + t('pipe.markSkip', 'Skip')),
         c('button', {
           className: 'btn btn-ghost btn-sm',
           style: { color: 'var(--rausch)' },
@@ -160,70 +330,216 @@ Router.register('pipeline', async () => {
     }
   }
 
+  // Mark a queued URL as done (`- [x]`) or skipped (`- [!]`) in
+  // data/pipeline.md, with an optional free-text reason. Reuses the
+  // focus-trapped UI.confirm modal — the reason input rides in its body.
+  async function markUrl(url, state, btn) {
+    const label = state === 'x' ? t('pipe.markDone', 'Done') : t('pipe.markSkip', 'Skip');
+    const input = c('input', {
+      id: 'pipe-mark-reason',
+      className: 'input',
+      'aria-label': t('pipe.reason', 'Reason (optional)'),
+      placeholder: t('pipe.reason', 'Reason (optional)'),
+      style: { width: '100%', marginTop: '8px' },
+    });
+    const body = c('span', { style: { display: 'block' } }, [
+      c('span', { style: { display: 'block', wordBreak: 'break-all', color: 'var(--foggy)' } }, shortUrl(url)),
+      input,
+    ]);
+    if (!(await UI.confirm(label, body, {
+      danger: false, confirmLabel: label, cancelLabel: t('common.cancel', 'Cancel'),
+    }))) return;
+    await UI.withSpinner(btn,
+      () => API.post('/api/pipeline/mark', { url, state, reason: input.value.trim() }));
+    UI.toast(t('pipe.marked', 'Marked') + ': ' + label);
+    if (activeUrl === url) { activeUrl = null; previewBody = ''; previewError = ''; }
+    await refresh();
+  }
+
   function urlRow(url) {
     const isActive = url === activeUrl;
+    const m = rowMeta(url);
     return c('div', {
-      className: 'flex-between pipeline-row',
+      className: 'pipeline-row',
       'data-url': url,
+      role: 'row',
       style: {
-        padding: '10px 14px',
-        border: '1px solid ' + (isActive ? 'var(--hof)' : 'var(--slate)'),
-        borderRadius: 'var(--radius)',
+        display: 'grid',
+        gridTemplateColumns: GRID_COLS,
+        alignItems: 'center',
+        gap: '10px',
+        padding: '0 12px',
+        height: ROW_H + 'px',
+        borderBottom: '1px solid var(--slate)',
+        borderLeft: '2px solid ' + (isActive ? 'var(--rausch)' : 'transparent'),
         background: isActive ? 'var(--beach)' : 'transparent',
         cursor: 'pointer',
       },
+      onClick: () => selectUrl(url),
     }, [
-      c('div', {
-        style: { flex: 1, minWidth: 0 },
-        onClick: () => selectUrl(url),
-      }, [
-        c('div', { style: { fontWeight: 600, fontSize: '14px' } }, shortHost(url)),
-        // Keep an <a> with href so existing tests + accessibility tools
-        // can locate the row by URL. stopPropagation prevents the row's
-        // selectUrl handler from firing when the link is clicked
-        // directly — middle-click / Cmd-click open in a new tab as
-        // expected.
+      c('div', { role: 'cell', style: { ...CELL, color: 'var(--foggy)', fontVariantNumeric: 'tabular-nums' } },
+        String(rowIndex.get(url) || '')),
+      c('div', { role: 'cell', title: m.company, style: { ...CELL, fontWeight: 600 } }, m.company),
+      c('div', { role: 'cell', title: m.role, style: CELL }, m.role),
+      c('div', { role: 'cell', title: m.location, style: CELL }, m.location || '—'),
+      c('div', { role: 'cell', title: m.comp, style: CELL }, m.comp || '—'),
+      c('div', { role: 'cell', title: m.posted, style: { ...CELL, fontVariantNumeric: 'tabular-nums' } }, m.posted || '—'),
+      c('div', { role: 'cell', title: m.notes, style: { ...CELL, color: 'var(--foggy)' } }, m.notes || '—'),
+      // Keep an <a> with href so existing tests + accessibility tools
+      // can locate the row by URL. stopPropagation prevents the row's
+      // selectUrl handler from firing when the link is clicked
+      // directly — middle-click / Cmd-click open in a new tab as
+      // expected.
+      c('div', { role: 'cell', style: CELL }, [
         c('a', {
           href: url,
           target: '_blank',
           rel: 'noopener',
+          title: url,
           onClick: (e) => e.stopPropagation(),
-          style: { display: 'block', fontSize: '12px', color: 'var(--foggy)', wordBreak: 'break-all', marginTop: '2px', textDecoration: 'none' },
+          style: { ...CELL, display: 'block', color: 'var(--foggy)', textDecoration: 'none' },
         }, url),
       ]),
-      // F-V54-B (v1.54.4) — these row actions were icon-only (▶ / ✕)
-      // with only a `title`. `title` is not a reliable accessible name
-      // (WCAG 4.1.2 Name, Role, Value), and with one pair per row a
-      // screen-reader user heard N identical "button"s. Each now has an
-      // explicit aria-label disambiguated by a truncated URL so the
-      // accessibility tree reads e.g. "Delete: …/jobs/12345".
-      c('div', { className: 'flex gap-1' }, [
+      // v1.138.0 — the four icon actions moved into a ⋯ row menu so the
+      // grid keeps its columns readable. The menu items are the SAME
+      // buttons (F-V54-B aria-labels intact); the ⋯ trigger is named by
+      // the row's role so it never collapses to N identical "button"s.
+      c('div', { className: 'flex gap-1', role: 'cell', style: { justifyContent: 'flex-end' } }, [
         c('button', {
-          className: 'btn btn-ghost btn-sm',
-          title: t('pipe.evaluateBtn'),
-          'aria-label': t('pipe.evaluateBtn') + ': ' + shortUrl(url),
-          onClick: (e) => { e.stopPropagation(); Router.go('/evaluate?url=' + encodeURIComponent(url)); },
-        }, '▶'),
-        c('button', {
-          className: 'btn btn-ghost btn-sm pipeline-row-delete',
-          title: t('common.delete', 'Delete'),
-          'aria-label': t('common.delete', 'Delete') + ': ' + shortUrl(url),
-          onClick: async (e) => {
-            e.stopPropagation();
-            if (!(await UI.confirm(
-              t('pipe.confirmDelTitle', 'Remove from pipeline?'),
-              t('pipe.confirmDel'),
-              { danger: true, confirmLabel: t('common.delete', 'Delete'), cancelLabel: t('common.cancel', 'Cancel') }))) return;
-            await UI.withSpinner(e.currentTarget,
-              () => API.del('/api/pipeline?url=' + encodeURIComponent(url)));
-            UI.toast(t('pipe.deleted'));
-            if (activeUrl === url) { activeUrl = null; previewBody = ''; previewError = ''; }
-            await refresh();
-          },
-        }, '✕'),
+          className: 'btn btn-ghost btn-sm pipeline-row-menu',
+          title: t('track.col.actions', 'Actions'),
+          'aria-label': t('track.col.actions', 'Actions') + ': ' + m.role,
+          'aria-haspopup': 'menu',
+          'aria-expanded': 'false',
+          onClick: (e) => { e.stopPropagation(); toggleMenu(url, e.currentTarget); },
+        }, '⋯'),
       ]),
     ]);
   }
+
+  // ── row action menu ──
+  // One body-level popover reused by every row: the grid scrolls inside
+  // an `overflow:auto` card, so an in-row menu would be clipped.
+  const menu = c('div', {
+    id: 'pipeline-row-menu', role: 'menu',
+    style: {
+      position: 'fixed', display: 'none', zIndex: 60, minWidth: '190px',
+      padding: '6px', borderRadius: 'var(--radius)', border: '1px solid var(--slate)',
+      background: 'var(--panel, #fff)', boxShadow: '0 12px 32px rgba(0,0,0,.22)',
+    },
+  });
+  let menuUrl = null;
+  let menuTrigger = null;   // the ⋯ button that opened it — spinner anchor
+  function closeMenu() {
+    menu.style.display = 'none';
+    menuUrl = null;
+    document.querySelectorAll('.pipeline-row-menu[aria-expanded="true"]')
+      .forEach((b) => b.setAttribute('aria-expanded', 'false'));
+  }
+  function menuItem(label, icon, onClick, opts = {}) {
+    const btn = c('button', {
+      className: 'btn btn-ghost btn-sm ' + (opts.className || ''),
+      role: 'menuitem',
+      title: label,
+      style: {
+        display: 'flex', alignItems: 'center', gap: '8px', width: '100%',
+        justifyContent: 'flex-start', textAlign: 'left',
+        color: opts.danger ? 'var(--rausch)' : 'inherit',
+      },
+      // closeMenu() hides the item itself, so in-flight feedback has to
+      // land on the still-visible ⋯ trigger.
+      onClick: (e) => { e.stopPropagation(); const anchor = menuTrigger; closeMenu(); onClick(e, anchor); },
+    }, [
+      c('span', { style: { width: '14px' } }, icon),
+      c('span', { style: { flex: '1' } }, label),
+      // Fixed mnemonic, shown so it survives i18n (localized labels
+      // would give different first letters per locale).
+      opts.key ? c('kbd', {
+        style: {
+          fontSize: '11px', opacity: '.55', border: '1px solid var(--slate)',
+          borderRadius: '4px', padding: '0 4px', minWidth: '16px', textAlign: 'center',
+        },
+      }, opts.key.toUpperCase()) : null,
+    ].filter(Boolean));
+    if (opts.ariaLabel) btn.setAttribute('aria-label', opts.ariaLabel);
+    if (opts.key) btn.dataset.key = opts.key;
+    return btn;
+  }
+  function buildMenu(url) {
+    menu.innerHTML = '';
+    // F-V54-B (v1.54.4): every destructive/stateful action keeps an
+    // explicit aria-label disambiguated by a truncated URL, so the
+    // a11y tree reads e.g. "Delete: …/jobs/12345".
+    menu.appendChild(menuItem(t('pipe.evaluateBtn'), '▶',
+      () => Router.go('/evaluate?url=' + encodeURIComponent(url)),
+      { key: 'e', ariaLabel: t('pipe.evaluateBtn') + ': ' + shortUrl(url) }));
+    menu.appendChild(menuItem(t('pipe.openTab', 'Open'), '↗',
+      () => window.open(url, '_blank', 'noopener'), { key: 'o' }));
+    menu.appendChild(menuItem(t('pipe.markDone', 'Done'), '✓',
+      (e, anchor) => markUrl(url, 'x', anchor || e.currentTarget),
+      { key: 'd', className: 'pipeline-row-done', ariaLabel: t('pipe.markDone', 'Done') + ': ' + shortUrl(url) }));
+    menu.appendChild(menuItem(t('pipe.markSkip', 'Skip'), '⏭',
+      (e, anchor) => markUrl(url, '!', anchor || e.currentTarget),
+      { key: 's', className: 'pipeline-row-skip', ariaLabel: t('pipe.markSkip', 'Skip') + ': ' + shortUrl(url) }));
+    menu.appendChild(menuItem(t('common.delete', 'Delete'), '✕',
+      async (e, anchor) => {
+        if (!(await UI.confirm(
+          t('pipe.confirmDelTitle', 'Remove from pipeline?'),
+          t('pipe.confirmDel'),
+          { danger: true, confirmLabel: t('common.delete', 'Delete'), cancelLabel: t('common.cancel', 'Cancel') }))) return;
+        await UI.withSpinner(anchor || e.currentTarget,
+          () => API.del('/api/pipeline?url=' + encodeURIComponent(url)));
+        UI.toast(t('pipe.deleted'));
+        if (activeUrl === url) { activeUrl = null; previewBody = ''; previewError = ''; }
+        await refresh();
+      },
+      { key: 'x', className: 'pipeline-row-delete', danger: true, ariaLabel: t('common.delete', 'Delete') + ': ' + shortUrl(url) }));
+  }
+  function toggleMenu(url, btn) {
+    if (menuUrl === url && menu.style.display !== 'none') return closeMenu();
+    closeMenu();
+    buildMenu(url);
+    menuUrl = url;
+    menuTrigger = btn;
+    menu.style.display = 'block';
+    if (!menu.isConnected) document.body.appendChild(menu);
+    // Flip above the trigger when the menu would overflow the viewport.
+    const r = btn.getBoundingClientRect();
+    const h = menu.offsetHeight;
+    const w = menu.offsetWidth;
+    menu.style.top = (r.bottom + h > window.innerHeight ? Math.max(8, r.top - h - 4) : r.bottom + 4) + 'px';
+    menu.style.left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8)) + 'px';
+    btn.setAttribute('aria-expanded', 'true');
+    (menu.querySelector('button') || menu).focus();
+  }
+  const onDocClick = (e) => {
+    if (menuUrl && !menu.contains(e.target) && !e.target.closest?.('.pipeline-row-menu')) closeMenu();
+  };
+  const onDocKey = (e) => {
+    if (!menuUrl) return;
+    if (e.key === 'Escape') return closeMenu();
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    // Mnemonic shortcuts while the row menu is open: e/o/d/s/x.
+    const k = (e.key || '').toLowerCase();
+    if (!/^[a-z]$/.test(k)) return; // keeps the attribute selector injection-free
+    const hit = menu.querySelector('[data-key="' + k + '"]');
+    if (hit) { e.preventDefault(); hit.click(); }
+  };
+  document.addEventListener('click', onDocClick);
+  document.addEventListener('keydown', onDocKey);
+  // The route renderer re-runs on every visit to #/pipeline, so the
+  // document-level listeners and the body-level popover must be torn
+  // down when the hash leaves (same pattern as dashboard.js/help.js).
+  const onHashChange = () => {
+    closeMenu();
+    if (!location.hash.startsWith('#/pipeline')) {
+      document.removeEventListener('click', onDocClick);
+      document.removeEventListener('keydown', onDocKey);
+      window.removeEventListener('hashchange', onHashChange);
+      menu.remove();
+    }
+  };
+  window.addEventListener('hashchange', onHashChange);
 
   // Virtualization state (closure-scoped so the single scroll
   // listener always sees the current filtered set).
@@ -257,11 +573,18 @@ Router.register('pipeline', async () => {
   function renderList() {
     list.innerHTML = '';
     const q = filterQuery.trim().toLowerCase();
-    const filtered = q ? allUrls.filter((u) => u.toLowerCase().includes(q)) : allUrls;
+    const filtered = sortRows(q
+      ? allItems.filter((item) => (item.text || item.url || '').toLowerCase().includes(q)).map((item) => item.url)
+      : allUrls);
     vFiltered = filtered;
+    rowIndex = new Map(filtered.map((u, i) => [u, i + 1]));
+    renderHead();
     counter.textContent = `${t('pipe.count', 'In queue')}: ${filtered.length}` +
       (q && filtered.length !== allUrls.length ? ` / ${allUrls.length}` : '');
     if (filtered.length === 0) {
+      // NOTE: toggle `display` directly — an author `display:grid` rule
+      // would beat the UA `[hidden]{display:none}` (v1.58.35 lesson).
+      head.style.display = 'none';
       vVirtual = false;
       list.style.removeProperty('max-height');
       list.style.removeProperty('overflow');
@@ -272,6 +595,7 @@ Router.register('pipeline', async () => {
       }, q ? t('pipe.noResults', 'No matches') : t('pipe.empty')));
       return;
     }
+    head.style.display = 'grid';
     if (filtered.length <= VIRTUALIZE_THRESHOLD) {
       // Original simple full render — unchanged for typical pipelines.
       vVirtual = false;
@@ -308,6 +632,9 @@ Router.register('pipeline', async () => {
   async function refresh() {
     const fresh = await API.get('/api/pipeline');
     allUrls = fresh.urls || [];
+    allItems = (fresh.items || allUrls.map((url) => ({ url, text: url })))
+      .filter((item) => item && item.url);
+    itemByUrl = new Map(allItems.map((item) => [item.url, item]));
     renderList();
     renderPreview();
   }
@@ -318,7 +645,11 @@ Router.register('pipeline', async () => {
   });
 
   // ── initial paint ──
-  allUrls = (await API.get('/api/pipeline')).urls || [];
+  const initial = await API.get('/api/pipeline');
+  allUrls = initial.urls || [];
+  allItems = (initial.items || allUrls.map((url) => ({ url, text: url })))
+    .filter((item) => item && item.url);
+  itemByUrl = new Map(allItems.map((item) => [item.url, item]));
   renderList();
   renderPreview();
 
@@ -403,6 +734,13 @@ Router.register('pipeline', async () => {
     c('div', { className: 'flex gap-3 mb-3 pipeline-controls', style: { alignItems: 'center', flexWrap: 'wrap' } },
       [counter, filterInput]),
 
-    c('div', { className: 'grid-2', style: { gap: '16px' } }, [list, previewPane]),
+    // v1.138.0 — the queue is a full-width data grid (sticky header,
+    // sortable columns); the preview pane moved below it so the columns
+    // get real horizontal room.
+    c('div', {
+      className: 'card mb-3', role: 'table', 'aria-label': t('pipe.title', 'Pipeline'),
+      style: { padding: 0, overflow: 'auto', maxHeight: '70vh' },
+    }, [head, list]),
+    previewPane,
   ]);
 });

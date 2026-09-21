@@ -4,8 +4,10 @@ import {
   parseMarkdownTable,
   parseApplications,
   parsePipeline,
+  parsePipelineItems,
   addPipelineUrl,
   removePipelineUrl,
+  setPipelineState,
   parseReportHeader,
   slugify,
   today,
@@ -190,6 +192,93 @@ test('removePipelineUrl: removes url', () => {
   const before = '```\nhttps://a.com/1\nhttps://b.com/2\n```';
   const after = removePipelineUrl(before, 'https://a.com/1');
   assert.deepEqual(parsePipeline(after), ['https://b.com/2']);
+});
+
+// ─────────────── parent CLI format (`## Pending` + `- [ ]` rows) ───────────────
+
+const CLI_MD = [
+  '# Job Pipeline',
+  '',
+  '## Pendientes',
+  '',
+  '- [ ] https://a.com/1 | Acme | Senior SWE | Remote | 100k',
+  '- [ ] local:jds/x.md | Beta | Lead | Leeds',
+  '- [x] https://old.com/9 | Gamma | Closed — expired',
+  '',
+  '## Procesadas',
+  '',
+  '- [x] [2027](../reports/2027-a.md) | https://done.com/7 | A.Team | SWE | 2.8/5 | PDF ❌',
+  '',
+].join('\n');
+
+test('parsePipeline: reads the CLI Pending section, skips processed rows', () => {
+  assert.deepEqual(parsePipeline(CLI_MD), ['https://a.com/1', 'local:jds/x.md']);
+});
+
+test('parsePipelineItems: preserves the whole pending row for UI search', () => {
+  assert.deepEqual(parsePipelineItems(CLI_MD), [
+    { url: 'https://a.com/1', text: '- [ ] https://a.com/1 | Acme | Senior SWE | Remote | 100k' },
+    { url: 'local:jds/x.md', text: '- [ ] local:jds/x.md | Beta | Lead | Leeds' },
+  ]);
+});
+
+test('parsePipeline: a stray empty fence does not hide the Pending section', () => {
+  assert.deepEqual(parsePipeline(CLI_MD.replace('# Job Pipeline', '# Job Pipeline\n\n```\n```')), [
+    'https://a.com/1',
+    'local:jds/x.md',
+  ]);
+});
+
+test('addPipelineUrl: appends a `- [ ]` row inside the CLI Pending section', () => {
+  const after = addPipelineUrl(CLI_MD, 'https://b.com/2');
+  assert.deepEqual(parsePipeline(after), ['https://a.com/1', 'local:jds/x.md', 'https://b.com/2']);
+  assert.ok(after.indexOf('- [ ] https://b.com/2') < after.indexOf('## Procesadas'));
+  assert.match(after, /- \[x\] \[2027\]/); // processed section untouched
+});
+
+test('addPipelineUrl: dedups against the CLI Pending section', () => {
+  assert.equal(addPipelineUrl(CLI_MD, 'https://a.com/1'), CLI_MD);
+});
+
+test('removePipelineUrl: drops one CLI row, keeps the rest of the file', () => {
+  const after = removePipelineUrl(CLI_MD, 'https://a.com/1');
+  assert.deepEqual(parsePipeline(after), ['local:jds/x.md']);
+  assert.match(after, /- \[x\] https:\/\/old\.com\/9/);
+  assert.match(after, /- \[x\] \[2027\]/);
+});
+
+// ───────────────────────── setPipelineState ─────────────────────────
+
+test('setPipelineState: checks off a CLI row, keeps its columns', () => {
+  const after = setPipelineState(CLI_MD, 'https://a.com/1', 'x');
+  assert.match(after, /- \[x\] https:\/\/a\.com\/1 \| Acme \| Senior SWE \| Remote \| 100k/);
+  assert.deepEqual(parsePipeline(after), ['local:jds/x.md']);
+  assert.match(after, /- \[x\] \[2027\]/); // processed section untouched
+});
+
+test('setPipelineState: skips with a reason column', () => {
+  const after = setPipelineState(CLI_MD, 'local:jds/x.md', '!', 'salary too low');
+  assert.match(after, /- \[!\] local:jds\/x\.md \| Beta \| Lead \| Leeds \| salary too low/);
+  assert.deepEqual(parsePipeline(after), ['https://a.com/1']);
+});
+
+test('setPipelineState: sanitizes the reason (no pipe/newline injection)', () => {
+  const after = setPipelineState(CLI_MD, 'https://a.com/1', '!', 'bad\n- [ ] https://evil.com | x');
+  assert.deepEqual(parsePipeline(after), ['local:jds/x.md']);
+  assert.ok(!after.includes('https://evil.com |'));
+});
+
+test('setPipelineState: works on the legacy fence format', () => {
+  const before = '```\nhttps://a.com/1\nhttps://b.com/2\n```';
+  const after = setPipelineState(before, 'https://a.com/1', 'x', 'applied');
+  assert.match(after, /- \[x\] https:\/\/a\.com\/1 \| applied/);
+  assert.deepEqual(parsePipeline(after), ['https://b.com/2']);
+});
+
+test('setPipelineState: unknown url or bad state → unchanged', () => {
+  assert.equal(setPipelineState(CLI_MD, 'https://nope.com/9', 'x'), CLI_MD);
+  assert.equal(setPipelineState(CLI_MD, 'https://a.com/1', 'z'), CLI_MD);
+  assert.equal(setPipelineState('', 'https://a.com/1', 'x'), '');
 });
 
 // ───────────────────────── parseReportHeader ─────────────────────────

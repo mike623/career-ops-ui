@@ -22,6 +22,7 @@ import { isValidJobUrl, sanitizeJobDescription, stripDangerousMarkdown } from '.
 import { ensureRussianPortalsDefaults } from './lib/store.mjs';
 // Route modules — each exports `register<Topic>Routes(app)`.
 import { registerActivityRoutes } from './lib/routes/activity.mjs';
+import { registerEmailIngestRoutes } from './lib/routes/email-ingest.mjs';
 import { registerConfigRoutes } from './lib/routes/config.mjs';
 import { registerContentRoutes } from './lib/routes/content.mjs';
 import { registerTwoPagerRoutes } from './lib/routes/two-pager.mjs';
@@ -160,6 +161,7 @@ export function createApp() {
   registerConfigRoutes(app);
   registerHelpRoutes(app);
   registerActivityRoutes(app);
+  registerEmailIngestRoutes(app);     // read-only run history for the parent's ingest-email-labels.mjs
   registerHealthRoutes(app);          // includes /api/dashboard
   registerTrackerRoutes(app);
   registerPipelineRoutes(app);        // includes /api/pipeline/preview
